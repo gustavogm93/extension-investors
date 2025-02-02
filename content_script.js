@@ -657,8 +657,6 @@ function obtenerValoresFilaBalance(dataName) {
   const valueContainers = row.querySelectorAll(
     ".values-C9MdAMrq .container-OxVAcLqi.legacy-mode-OxVAcLqi .wrap-OxVAcLqi .value-OxVAcLqi"
   );
-  const years2 = extractProcessedYears();
-  console.log(years2, "AT OBTENERS VALORES FILA BALANCE");
   const years = [2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025];
   const dataObj = {};
 
@@ -860,8 +858,6 @@ function obtenerValoresFilaBalance(dataName) {
         // si existe el valor seria hasta 2017
 
         const years = [2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025];
-        const years2 = extractProcessedYears();
-        console.log(years2, "Income Statement");
 
         const incomeMetrics = [
           "Total revenue",
