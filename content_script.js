@@ -596,37 +596,29 @@ function calcAllIntrinsicValues(report) {
 
     // 1. Obtener FCF más reciente (2024)
     const latestFCF = report.cashFlow?.["Free cash flow"]?.["2024"];
-    console.log("Free Cash Flow (2024):", latestFCF); // Log the raw value
 
     const fcfNum = toNumber(latestFCF);
-    console.log("Converted Free Cash Flow (2024):", fcfNum); // Log the converted value
 
     // 2. Calcular tasa de crecimiento histórica de FCF a 5 años
     const fcf2019 = toNumber(report.cashFlow?.["Free cash flow"]?.["2019"]);
-    console.log("Free Cash Flow (2019):", fcf2019); // Log the raw value
 
     const fcfGrowth =
       fcfNum && fcf2019 ? ((fcfNum - fcf2019) / Math.abs(fcf2019)) * 100 : null;
-    console.log("Free Cash Flow Growth Rate:", fcfGrowth); // Log the growth rate
 
     // 3. Obtener métricas relevantes
     const stockPrice = toNumber(report.metrics.stockPrice);
-    console.log("Stock Price:", stockPrice); // Log the stock price
 
     const revenueGrowth = parseFloat(
       report.metrics.fiveYearGrowthRates.revenue
     );
-    console.log("Revenue Growth Rate:", revenueGrowth); // Log the revenue growth rate
 
     const peRatio = parseFloat(report.metrics.PE);
-    console.log("P/E Ratio:", peRatio); // Log the P/E ratio
 
     // Verificación de datos faltantes
     if (!fcfNum) missingData.push("Free cash flow (2024)");
     if (!fcfGrowth) missingData.push("Free cash flow histórico (5 años)");
 
     // Log the missing data
-    console.log("Missing Data:", missingData);
 
     if (missingData.length === 0) {
       // Cálculo mejorado usando múltiplo dinámico
