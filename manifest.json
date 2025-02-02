@@ -1,0 +1,14 @@
+{
+  "name": "Mi Extensión Modal",
+  "version": "1.0",
+  "manifest_version": 3,
+  "description": "Inyecta un botón en la página que abre un modal con texto de la misma página.",
+  "permissions": [],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content_script.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
