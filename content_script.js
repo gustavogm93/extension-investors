@@ -298,6 +298,14 @@ function updateDOMWithInvestors(investorsData) {
         // Encontrar la fila completa que contiene este titleWrap
         const row = titleWrap.closest("[data-name]");
         if (row) {
+          // Remover el div específico
+          const buttonWrap = row.querySelector(
+            ".buttonWrap-C9MdAMrq.hasChanges-C9MdAMrq"
+          );
+          if (buttonWrap) {
+            buttonWrap.remove();
+          }
+
           // Actualizar el atributo data-name
           row.setAttribute("data-name", investorName);
 
