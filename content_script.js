@@ -1,7 +1,23 @@
 // content_script.js
 var financialData;
 var intrensicValues;
-
+function parseWithSuffix(str) {
+  if (!str || typeof str !== "string") return null;
+  let cleaned = str.replace(/[^0-9.\-BM]/gi, "");
+  if (!cleaned) return null;
+  let multiplier = 1;
+  const upper = cleaned.toUpperCase();
+  if (upper.endsWith("B")) {
+    multiplier = 1_000_000_000;
+    cleaned = cleaned.slice(0, -1);
+  } else if (upper.endsWith("M")) {
+    multiplier = 1_000_000;
+    cleaned = cleaned.slice(0, -1);
+  }
+  const val = parseFloat(cleaned);
+  if (isNaN(val)) return null;
+  return val * multiplier;
+}
 function calculateIntrinsicValues(financialData) {
   const metrics = financialData.metrics;
   const income = financialData.incomeStatement;
@@ -449,61 +465,42 @@ function removeRowsAndColumns() {
   });
 }
 
-/**
- * Calcula el Intrinsic Value para varios "super investors" usando
- * las métricas del objeto "report". Retorna un objeto con la forma:
- * {
- *    InvestingEquation: [
- *      {
- *        "Benjamin Graham": {
- *          intrensicValue: number|null,
- *          missingData: string[]
- *        }
- *      },
- *      ...
- *    ]
- * }
- */
+// -------------------------------------------------------------------------
+// Ajustado para contemplar B y M en calcAllIntrinsicValues y calculateFiveYearGrowthRates
+// -------------------------------------------------------------------------
 function calcAllIntrinsicValues(report) {
   const result = { InvestingEquation: [] };
 
-  // Función para parsear float de un string, o null si no se puede
   function toNumber(str) {
     if (!str) return null;
-    const val = parseFloat(str.replace(/[^0-9.\-]+/g, ""));
-    return isNaN(val) ? null : val;
+    const numeric = parseWithSuffix(str);
+    return numeric !== null ? numeric : null;
   }
 
-  // Tomamos datos "básicos"
   const stockPrice = toNumber(report.metrics?.stockPrice);
   const pe = toNumber(report.metrics?.PE);
   const eps = toNumber(report.metrics?.EPS);
-  // Tomamos las growth rates que calculaste (en % strings, ej. "8.51%")
-  // Ej: "revenue": "8.51%" -> parseamos a 8.51
-  const revenueGrowStr = report.metrics?.fiveYearGrowthRates?.revenue || null;
-  const netIncomeGrowStr =
-    report.metrics?.fiveYearGrowthRates?.netIncome || null;
-  const ebitdaGrowStr = report.metrics?.fiveYearGrowthRates?.ebitda || null;
-  const fcfGrowStr = report.metrics?.fiveYearGrowthRates?.freeCashFlow || null;
 
   function parseGrowthRate(str) {
     if (!str) return null;
     const num = parseFloat(str.replace(/[^0-9.\-]+/g, ""));
-    // Convertimos a decimal: 8.51% => 0.0851
     if (isNaN(num)) return null;
     return num / 100;
   }
 
-  const revenueGrowth = parseGrowthRate(revenueGrowStr);
-  const netIncomeGrowth = parseGrowthRate(netIncomeGrowStr);
-  const ebitdaGrowth = parseGrowthRate(ebitdaGrowStr);
-  const fcfGrowth = parseGrowthRate(fcfGrowStr);
+  const revenueGrowth = parseGrowthRate(
+    report.metrics?.fiveYearGrowthRates?.revenue
+  );
+  const netIncomeGrowth = parseGrowthRate(
+    report.metrics?.fiveYearGrowthRates?.netIncome
+  );
+  const ebitdaGrowth = parseGrowthRate(
+    report.metrics?.fiveYearGrowthRates?.ebitda
+  );
+  const fcfGrowth = parseGrowthRate(
+    report.metrics?.fiveYearGrowthRates?.freeCashFlow
+  );
 
-  //--------------------------------------------------------------------------
-  // 1) Benjamin Graham (versión simplificada)
-  //    Intrinsic Value = EPS * (8.5 + 2*g)
-  //    Usamos netIncomeGrowth como proxy de EPS growth, si no existiese un EPS growth real
-  //--------------------------------------------------------------------------
   (function benjaminGraham() {
     const investorName = "Benjamin Graham";
     let missingData = [];
@@ -514,13 +511,8 @@ function calcAllIntrinsicValues(report) {
       missingData.push("5y net income growth (para g)");
 
     if (missingData.length === 0) {
-      // g es netIncomeGrowth
       const g = netIncomeGrowth;
       intrensicValue = eps * (8.5 + 2 * (g * 100));
-      // NOTA: a veces la fórmula espera "g" en entero (p.e. si g=8.51% => 8.51).
-      // En otras implementaciones se usa g en decimal.
-      // Aquí multiplicamos g*100 => si g=0.11 => g*100=11 => 8.5 + 2*11=8.5 +22=30.5
-      // Intrinsic = EPS*30.5 -> etc.
     }
 
     result.InvestingEquation.push({
@@ -528,12 +520,6 @@ function calcAllIntrinsicValues(report) {
     });
   })();
 
-  //--------------------------------------------------------------------------
-  // 2) Peter Lynch (muy simplificado)
-  //    Digamos que usa un "Fair Value" = EPS * (g * 100)
-  //    (Si g=0.11 => g*100=11 => FairValue=EPS*11).
-  //    *No es su fórmula real, sólo un ejemplo.*
-  //--------------------------------------------------------------------------
   (function peterLynch() {
     const investorName = "Peter Lynch";
     let missingData = [];
@@ -552,36 +538,18 @@ function calcAllIntrinsicValues(report) {
     });
   })();
 
-  //--------------------------------------------------------------------------
-  // 3) Warren Buffett (versión ultra simplificada)
-  //    Podríamos usar un "Owner Earnings" approach con FCF ~ OwnerEarnings.
-  //    y un multiplicador X.
-  //    Ej: IntrinsicValue = FCF final * ( 1 + fcfGrowth) / (r - fcfGrowth) ...
-  //    Aquí, si no tenemos discount rate, haremos algo tonto:
-  //    Intrinsic = FCF (promedio) * 20 (por decir).
-  //--------------------------------------------------------------------------
   (function warrenBuffett() {
     const investorName = "Warren Buffett";
     let missingData = [];
     let intrensicValue = null;
 
-    // Tomamos freeCashFlow 2023, por ej.
     const fcf2023 = report.cashFlow?.["Free cash flow"]?.["2023"];
-    console.log("Free Cash Flow (2023):", fcf2023); // Log the raw value
-
     const fcfNum = toNumber(fcf2023);
-    console.log("Converted Free Cash Flow (2023):", fcfNum); // Log the converted value
-
     if (!fcfNum) missingData.push("Free cash flow (2023)");
 
-    // Log the missing data
-    console.log("Missing Data:", missingData);
-
     if (missingData.length === 0) {
-      // Ejemplo de multiplicador
       const multiple = 20;
       intrensicValue = fcfNum * multiple;
-      console.log("Intrinsic Value (Warren Buffett):", intrensicValue); // Log the intrinsic value
     }
 
     result.InvestingEquation.push({
@@ -589,71 +557,6 @@ function calcAllIntrinsicValues(report) {
     });
   })();
 
-  (function warrenBuffett() {
-    const investorName = "Warren Buffett";
-    let missingData = [];
-    let intrensicValue = null;
-
-    // 1. Obtener FCF más reciente (2024)
-    const latestFCF = report.cashFlow?.["Free cash flow"]?.["2024"];
-
-    const fcfNum = toNumber(latestFCF);
-
-    // 2. Calcular tasa de crecimiento histórica de FCF a 5 años
-    const fcf2019 = toNumber(report.cashFlow?.["Free cash flow"]?.["2019"]);
-
-    const fcfGrowth =
-      fcfNum && fcf2019 ? ((fcfNum - fcf2019) / Math.abs(fcf2019)) * 100 : null;
-
-    // 3. Obtener métricas relevantes
-    const stockPrice = toNumber(report.metrics.stockPrice);
-
-    const revenueGrowth = parseFloat(
-      report.metrics.fiveYearGrowthRates.revenue
-    );
-
-    const peRatio = parseFloat(report.metrics.PE);
-
-    // Verificación de datos faltantes
-    if (!fcfNum) missingData.push("Free cash flow (2024)");
-    if (!fcfGrowth) missingData.push("Free cash flow histórico (5 años)");
-
-    // Log the missing data
-
-    if (missingData.length === 0) {
-      // Cálculo mejorado usando múltiplo dinámico
-      const baseMultiple = 20; // Múltiplo base
-      const growthAdjustedMultiple = baseMultiple * (1 + revenueGrowth / 100);
-      console.log("Growth Adjusted Multiple:", growthAdjustedMultiple); // Log the adjusted multiple
-
-      const marginOfSafety = 0.75; // 25% de margen de seguridad
-
-      // Cálculo final ajustado
-      intrensicValue = fcfNum * growthAdjustedMultiple * marginOfSafety;
-      console.log("Adjusted Intrinsic Value (Warren Buffett):", intrensicValue); // Log the adjusted intrinsic value
-
-      // Asegurar relación mínima con precio actual
-      if (stockPrice && intrensicValue / stockPrice < 0.5) {
-        intrensicValue = stockPrice * 0.5; // Límite inferior de seguridad
-        console.log(
-          "Adjusted Intrinsic Value after Safety Margin:",
-          intrensicValue
-        ); // Log the final intrinsic value after safety margin
-      }
-    }
-
-    result.InvestingEquation.push({
-      [investorName]: {
-        intrensicValue,
-        missingData,
-      },
-    });
-  })();
-
-  //--------------------------------------------------------------------------
-  // 4) Charlie Munger (hipotético)
-  //    Por ejemplo, un approach "PE * EPS" directo
-  //--------------------------------------------------------------------------
   (function charlieMunger() {
     const investorName = "Charlie Munger";
     let missingData = [];
@@ -671,27 +574,21 @@ function calcAllIntrinsicValues(report) {
     });
   })();
 
-  //--------------------------------------------------------------------------
-  // Retornamos
-  //--------------------------------------------------------------------------
   return result;
 }
-
 function calculateFiveYearGrowthRates(financialData) {
-  // Función auxiliar para limpiar números
-  const cleanNumber = (str) => {
-    if (str === "N/A" || !str) return null;
-    return parseFloat(str.replace(/[^0-9.-]+/g, ""));
-  };
+  function cleanNumber(str) {
+    if (!str || str === "N/A") return null;
+    return parseWithSuffix(str);
+  }
 
-  // Función para calcular CAGR
-  const calculateCAGR = (initialValue, finalValue, years) => {
+  function calculateCAGR(initialValue, finalValue, years) {
     if (!initialValue || !finalValue || initialValue <= 0) return null;
     return (
       ((Math.pow(finalValue / initialValue, 1 / years) - 1) * 100).toFixed(2) +
       "%"
     );
-  };
+  }
 
   const growthRates = {
     revenue: calculateCAGR(
@@ -716,9 +613,7 @@ function calculateFiveYearGrowthRates(financialData) {
     ),
   };
 
-  // Agregar los growth rates a las métricas
   financialData.metrics.fiveYearGrowthRates = growthRates;
-
   return growthRates;
 }
 
