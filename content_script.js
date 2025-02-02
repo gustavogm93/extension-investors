@@ -1,4 +1,6 @@
 // content_script.js
+var financialData;
+var intrensicValues;
 
 function calculateIntrinsicValues(financialData) {
   const metrics = financialData.metrics;
@@ -320,12 +322,38 @@ function updateDOMWithInvestors(investorsData) {
             const button = container.querySelector("button");
             if (button) {
               const intrinsicValue = getIntrinsicValue(investorName);
+              const intrinsicDiv = document.createElement("div");
+              intrinsicDiv.style.display = "flex";
+              intrinsicDiv.style.flexDirection = "column";
+              intrinsicDiv.style.gap = "4px";
+              intrinsicDiv.style.alignItems = "center";
+
               const span = document.createElement("span");
-              span.className = "intrinsic-value";
               span.textContent = intrinsicValue
                 ? `$${intrinsicValue.toFixed(2)}`
                 : "N/A";
-              container.replaceChild(span, button);
+
+              const span2 = document.createElement("span");
+              const percentageDiff = calculatePercentageDifference(
+                intrinsicValue,
+                financialData.metrics.stockPrice
+              );
+              span2.textContent = percentageDiff;
+              span2.style.fontSize = "12px";
+
+              // Add conditional classes based on the percentage value
+              if (percentageDiff !== "N/A") {
+                if (percentageDiff.includes("+")) {
+                  span2.className = "change-OxVAcLqi positive-OxVAcLqi";
+                } else if (percentageDiff.startsWith("%")) {
+                  span2.className = "change-OxVAcLqi negative-OxVAcLqi";
+                }
+              }
+
+              intrinsicDiv.appendChild(span);
+              intrinsicDiv.appendChild(span2);
+
+              container.replaceChild(intrinsicDiv, button);
             }
           });
         }
@@ -539,17 +567,94 @@ function calcAllIntrinsicValues(report) {
 
     // Tomamos freeCashFlow 2023, por ej.
     const fcf2023 = report.cashFlow?.["Free cash flow"]?.["2023"];
+    console.log("Free Cash Flow (2023):", fcf2023); // Log the raw value
+
     const fcfNum = toNumber(fcf2023);
+    console.log("Converted Free Cash Flow (2023):", fcfNum); // Log the converted value
+
     if (!fcfNum) missingData.push("Free cash flow (2023)");
+
+    // Log the missing data
+    console.log("Missing Data:", missingData);
 
     if (missingData.length === 0) {
       // Ejemplo de multiplicador
       const multiple = 20;
       intrensicValue = fcfNum * multiple;
+      console.log("Intrinsic Value (Warren Buffett):", intrensicValue); // Log the intrinsic value
     }
 
     result.InvestingEquation.push({
       [investorName]: { intrensicValue, missingData },
+    });
+  })();
+
+  (function warrenBuffett() {
+    const investorName = "Warren Buffett";
+    let missingData = [];
+    let intrensicValue = null;
+
+    // 1. Obtener FCF más reciente (2024)
+    const latestFCF = report.cashFlow?.["Free cash flow"]?.["2024"];
+    console.log("Free Cash Flow (2024):", latestFCF); // Log the raw value
+
+    const fcfNum = toNumber(latestFCF);
+    console.log("Converted Free Cash Flow (2024):", fcfNum); // Log the converted value
+
+    // 2. Calcular tasa de crecimiento histórica de FCF a 5 años
+    const fcf2019 = toNumber(report.cashFlow?.["Free cash flow"]?.["2019"]);
+    console.log("Free Cash Flow (2019):", fcf2019); // Log the raw value
+
+    const fcfGrowth =
+      fcfNum && fcf2019 ? ((fcfNum - fcf2019) / Math.abs(fcf2019)) * 100 : null;
+    console.log("Free Cash Flow Growth Rate:", fcfGrowth); // Log the growth rate
+
+    // 3. Obtener métricas relevantes
+    const stockPrice = toNumber(report.metrics.stockPrice);
+    console.log("Stock Price:", stockPrice); // Log the stock price
+
+    const revenueGrowth = parseFloat(
+      report.metrics.fiveYearGrowthRates.revenue
+    );
+    console.log("Revenue Growth Rate:", revenueGrowth); // Log the revenue growth rate
+
+    const peRatio = parseFloat(report.metrics.PE);
+    console.log("P/E Ratio:", peRatio); // Log the P/E ratio
+
+    // Verificación de datos faltantes
+    if (!fcfNum) missingData.push("Free cash flow (2024)");
+    if (!fcfGrowth) missingData.push("Free cash flow histórico (5 años)");
+
+    // Log the missing data
+    console.log("Missing Data:", missingData);
+
+    if (missingData.length === 0) {
+      // Cálculo mejorado usando múltiplo dinámico
+      const baseMultiple = 20; // Múltiplo base
+      const growthAdjustedMultiple = baseMultiple * (1 + revenueGrowth / 100);
+      console.log("Growth Adjusted Multiple:", growthAdjustedMultiple); // Log the adjusted multiple
+
+      const marginOfSafety = 0.75; // 25% de margen de seguridad
+
+      // Cálculo final ajustado
+      intrensicValue = fcfNum * growthAdjustedMultiple * marginOfSafety;
+      console.log("Adjusted Intrinsic Value (Warren Buffett):", intrensicValue); // Log the adjusted intrinsic value
+
+      // Asegurar relación mínima con precio actual
+      if (stockPrice && intrensicValue / stockPrice < 0.5) {
+        intrensicValue = stockPrice * 0.5; // Límite inferior de seguridad
+        console.log(
+          "Adjusted Intrinsic Value after Safety Margin:",
+          intrensicValue
+        ); // Log the final intrinsic value after safety margin
+      }
+    }
+
+    result.InvestingEquation.push({
+      [investorName]: {
+        intrensicValue,
+        missingData,
+      },
     });
   })();
 
@@ -687,6 +792,24 @@ function obtenerValoresFilaBalance(dataName) {
   return dataObj;
 }
 
+function calculatePercentageDifference(intrinsicValue, stockPrice) {
+  if (!intrinsicValue || !stockPrice) return "N/A";
+
+  // Convert stockPrice from string to number if needed
+  const stockPriceNum =
+    typeof stockPrice === "string"
+      ? parseFloat(stockPrice.replace(/[^0-9.-]+/g, ""))
+      : stockPrice;
+
+  // Calculate percentage difference
+  const difference = ((intrinsicValue - stockPriceNum) / stockPriceNum) * 100;
+
+  // Return formatted string with percentage
+  return difference > 0
+    ? `+%${difference.toFixed(2)}`
+    : `%${difference.toFixed(2)}`;
+}
+
 (function () {
   console.log("SE EJECUTA ESTO----");
 
@@ -811,7 +934,7 @@ function obtenerValoresFilaBalance(dataName) {
       evt.preventDefault();
       try {
         // Create an object to store all the data
-        const financialData = {
+        financialData = {
           metrics: {},
           incomeStatement: {},
           balanceSheet: {},
@@ -974,7 +1097,7 @@ function obtenerValoresFilaBalance(dataName) {
         }
         calculateFiveYearGrowthRates(financialData);
 
-        const intrensicValues = calcAllIntrinsicValues(financialData);
+        intrensicValues = calcAllIntrinsicValues(financialData);
         removeRowsAndColumns();
 
         updateDOMWithInvestors(intrensicValues);
