@@ -263,53 +263,56 @@ function updateDOMWithInvestors(investorsData) {
     };
 
     // Función auxiliar para obtener el valor intrínseco
-    const getIntrinsicValue = (investorName) => {
+    function getIntrinsicValue(investorName) {
       const investor = investorsData.InvestingEquation.find(
         (inv) => inv[investorName]
       );
       return investor ? investor[investorName].intrensicValue : null;
-    };
+    }
 
     // Iterar sobre cada mapeo y actualizar el DOM
     Object.entries(rowMapping).forEach(([originalText, investorName]) => {
-      // Encontrar el elemento titleText que contiene el texto original
       const titleTextElements = Array.from(
         document.querySelectorAll(".titleText-C9MdAMrq")
       ).filter((el) => el.textContent.trim() === originalText);
 
       titleTextElements.forEach((titleText) => {
-        // Obtener el contenedor principal titleWrap
         const titleWrap = titleText.closest(".titleWrap-C9MdAMrq");
         if (!titleWrap) return;
 
-        // Actualizar el texto del título
+        // Cambiar el texto al nuevo nombre
         titleText.textContent = investorName;
 
-        // Actualizar el enlace y su tooltip
+        // Actualizar enlace y tooltip si existe
         const link = titleWrap.querySelector(".indicatorPageLink-RSR_Hp1S");
         if (link) {
           link.title = `${investorName} intrinsic value calculation`;
-          // Actualizar href si es necesario
           link.href = `/investors/${investorName
             .toLowerCase()
             .replace(" ", "-")}/`;
         }
 
-        // Encontrar la fila completa que contiene este titleWrap
+        // Encontrar la fila (div) con data-name
         const row = titleWrap.closest("[data-name]");
         if (row) {
-          // Remover el div específico
+          // Ajustar el atributo data-name
+          row.setAttribute("data-name", investorName);
+
+          // Eliminar algún elemento extra si fuera necesario
           const buttonWrap = row.querySelector(
             ".buttonWrap-C9MdAMrq.hasChanges-C9MdAMrq"
           );
           if (buttonWrap) {
             buttonWrap.remove();
           }
+          const arrowSpan = row.querySelector(
+            "span.arrow-C9MdAMrq.hasChanges-C9MdAMrq"
+          );
+          if (arrowSpan) {
+            arrowSpan.remove();
+          }
 
-          // Actualizar el atributo data-name
-          row.setAttribute("data-name", investorName);
-
-          // Actualizar los contenedores de valores
+          // Reemplazar el botón con el valor intrínseco
           const valueContainers = row.querySelectorAll(
             ".container-OxVAcLqi.alignLeft-OxVAcLqi.legacy-mode-OxVAcLqi"
           );
@@ -337,11 +340,27 @@ function updateDOMWithInvestors(investorsData) {
       currencyElement.textContent = "Super Investors intrinsic values";
     }
 
-    // Ocultar el scrollbar overlay
+    // Ocultar scrollbar overlay
     const overlayScroll = document.querySelector(".overlayScrollWrap-Tv7LSjUz");
     if (overlayScroll) {
       overlayScroll.style.display = "none";
     }
+
+    // Ahora hacemos click en cada uno de los divs data-name que generamos.
+    // Usamos los nuevos nombres de inversor como referencia.
+    const investorNames = Object.values(rowMapping);
+    investorNames.forEach((invName) => {
+      const rowElement = document.querySelector(`[data-name="${invName}"]`);
+      if (rowElement) {
+        rowElement.click();
+      }
+    });
+    const firstColumnDivs = document.querySelectorAll(
+      "div.firstColumn-OWKkVLyj"
+    );
+    firstColumnDivs.forEach((div) => {
+      div.textContent = "Super investors";
+    });
   } catch (error) {
     console.error("Error updating DOM with investors data:", error);
   }
@@ -960,6 +979,19 @@ function obtenerValoresFilaBalance(dataName) {
 
         updateDOMWithInvestors(intrensicValues);
         updateInvestorButtons(financialData);
+
+        const targetElement = document.querySelector(
+          "div.lastContainer-JWoJqCpY"
+        );
+
+        // Si lo encontramos, usamos scrollIntoView para desplazar la vista hasta él
+        if (targetElement) {
+          targetElement.scrollIntoView({
+            behavior: "smooth",
+            block: "center",
+          });
+        }
+
         console.log("intrensicValues", intrensicValues);
         // Log the entire collected data at the end
         console.log("Financial Data:", financialData);
