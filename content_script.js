@@ -1,6 +1,35 @@
 // content_script.js
 var financialData;
 var intrensicValues;
+
+/**
+ * Aplica estilo de cabecera (fondo negro, texto blanco) a la fila `rowIndex`
+ * en la hoja `ws`, para `numCols` columnas.
+ */
+function applyHeaderStyle(ws, rowIndex, numCols) {
+  for (let c = 0; c < numCols; c++) {
+    const cellAddress = XLSX.utils.encode_cell({ r: rowIndex, c });
+    const cell = ws[cellAddress];
+    if (!cell) continue; // podría estar vacío
+
+    cell.s = {
+      fill: {
+        fgColor: { rgb: "000000" }, // Fondo negro
+      },
+      font: {
+        name: "Arial",
+        sz: 12,
+        bold: true,
+        color: { rgb: "FFFFFF" }, // Texto blanco
+      },
+      alignment: {
+        horizontal: "center",
+        vertical: "center",
+      },
+    };
+  }
+}
+
 function parseWithSuffix(str) {
   if (!str || typeof str !== "string") return null;
   let cleaned = str.replace(/[^0-9.\-BM]/gi, "");
@@ -543,20 +572,100 @@ function calcAllIntrinsicValues(report) {
     let missingData = [];
     let intrensicValue = null;
 
-    const fcf2023 = report.cashFlow?.["Free cash flow"]?.["2023"];
-    const fcfNum = toNumber(fcf2023);
-    if (!fcfNum) missingData.push("Free cash flow (2023)");
+    function parseWithSuffix(str) {
+      if (!str) return null;
+      const cleanStr = str.replace(/[,‪‬]/g, "");
+      const num = parseFloat(cleanStr.replace(/[^0-9.\-]+/g, ""));
+      const suffix = cleanStr.match(/[A-Za-z]+$/)?.[0]?.toUpperCase();
+
+      switch (suffix) {
+        case "B":
+          return num * 1000000000;
+        case "M":
+          return num * 1000000;
+        case "K":
+          return num * 1000;
+        default:
+          return num;
+      }
+    }
+
+    // Obtener FCF y convertir a valor por acción
+    const latestFCFStr = report.cashFlow?.["Free cash flow"]?.["2024"];
+    console.log;
+
+    const fcfNum = parseWithSuffix(latestFCFStr);
+
+    // Estimamos el número de acciones basado en el EPS y Net Income
+    const eps = parseFloat(report.metrics.EPS);
+
+    const netIncome2024 = parseWithSuffix(
+      report.incomeStatement?.["Net income"]?.["2024"]
+    );
+
+    const estimatedShares = netIncome2024 / eps;
+
+    // Convertir FCF a valor por acción
+    const fcfPerShare = fcfNum / estimatedShares;
+
+    // Calcular crecimiento histórico
+    const fcf2019Str = report.cashFlow?.["Free cash flow"]?.["2019"];
+
+    const fcf2019 = parseWithSuffix(fcf2019Str);
+
+    const fcf2019PerShare = fcf2019 / estimatedShares;
+
+    const years = 2024 - 2019;
+    const fcfGrowth =
+      ((fcfPerShare / fcf2019PerShare) ** (1 / years) - 1) * 100;
+
+    // Validaciones
+    if (!fcfNum) missingData.push("Free cash flow actual");
+    if (!fcfGrowth) missingData.push("Histórico de Free cash flow");
+    if (!eps) missingData.push("EPS");
+
+    // Log missing data
 
     if (missingData.length === 0) {
-      const multiple = 20;
-      intrensicValue = fcfNum * multiple;
+      // Usar una tasa de crecimiento más conservadora
+      const growthRate = Math.min(fcfGrowth, 12); // Cap at 12%
+
+      const discountRate = 0.12; // Aumentamos la tasa de descuento
+
+      const projectionPeriod = 10;
+      const terminalGrowthRate = 0.02;
+
+      let presentValue = 0;
+      let currentFCF = fcfPerShare;
+
+      // Calcular valor presente de flujos futuros
+      for (let i = 1; i <= projectionPeriod; i++) {
+        currentFCF *= 1 + growthRate / 100;
+        const discounted = currentFCF / Math.pow(1 + discountRate, i);
+        presentValue += discounted;
+
+        // Log future and discounted values for each year
+      }
+
+      // Calcular valor terminal
+      const terminalValue =
+        (currentFCF * (1 + terminalGrowthRate)) /
+        (discountRate - terminalGrowthRate);
+
+      const presentTerminalValue =
+        terminalValue / Math.pow(1 + discountRate, projectionPeriod);
+
+      // Valor intrínseco total con margen de seguridad del 30%
+      intrensicValue = (presentValue + presentTerminalValue) * 0.7;
     }
 
     result.InvestingEquation.push({
-      [investorName]: { intrensicValue, missingData },
+      [investorName]: {
+        intrensicValue,
+        missingData,
+      },
     });
   })();
-
   (function charlieMunger() {
     const investorName = "Charlie Munger";
     let missingData = [];
@@ -990,17 +1099,38 @@ function calculatePercentageDifference(intrinsicValue, stockPrice) {
         updateDOMWithInvestors(intrensicValues);
         updateInvestorButtons(financialData);
 
-        const targetElement = document.querySelector(
-          "div.lastContainer-JWoJqCpY"
-        );
-
-        // Si lo encontramos, usamos scrollIntoView para desplazar la vista hasta él
-        if (targetElement) {
-          targetElement.scrollIntoView({
-            behavior: "smooth",
-            block: "center",
+        try {
+          // Enviar mensaje al background script
+          const response = await chrome.runtime.sendMessage({
+            action: "createSheet",
+            sheetName: "Stock performance resume",
+            data: financialData,
           });
+
+          if (response.success) {
+            // Abrir el Sheet creado
+            window.open(response.sheetUrl, "_blank");
+          } else {
+            console.error("Error:", response.error);
+          }
+        } catch (error) {
+          console.error("Error de comunicación:", error);
         }
+        // TODO: Agregar aca el boton
+        // generateExcelAndDownload(financialData, XLSX);
+
+        // generateExcelAndDownload(financialData);
+        // const targetElement = document.querySelector(
+        //   "div.lastContainer-JWoJqCpY"
+        // );
+
+        // // Si lo encontramos, usamos scrollIntoView para desplazar la vista hasta él
+        // if (targetElement) {
+        //   targetElement.scrollIntoView({
+        //     behavior: "smooth",
+        //     block: "center",
+        //   });
+        // }
 
         console.log("intrensicValues", intrensicValues);
         // Log the entire collected data at the end

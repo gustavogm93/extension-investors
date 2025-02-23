@@ -2,13 +2,26 @@
   "name": "Mi Extensión Modal",
   "version": "1.0",
   "manifest_version": 3,
+  "background": {
+    "service_worker": "background.js"
+  },
+  "oauth2": {
+    "client_id": "1069255051147-br93fq9i6so5bvst7laeabpkpni3700d.apps.googleusercontent.com",
+    "scopes": ["https://www.googleapis.com/auth/spreadsheets"]
+  },
   "description": "Inyecta un botón en la página que abre un modal con texto de la misma página.",
-  "permissions": [],
+  "permissions": ["identity", "scripting"],
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["content_script.js"],
+      "js": ["lib/xlsx.full.min.js", "content_script.js"],
       "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["lib/xlsx.full.min.js"],
+      "matches": ["<all_urls>"]
     }
   ]
 }
