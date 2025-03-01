@@ -1,7 +1,44 @@
 // content_script.js
 var financialData;
 var intrensicValues;
+function transformBValues(obj) {
+  // Verificamos si no es objeto (o es null), retornamos tal cual.
+  if (typeof obj !== "object" || obj === null) {
+    return obj;
+  }
 
+  // Recorremos todas las claves del objeto
+  for (let key in obj) {
+    const value = obj[key];
+
+    // Si es un objeto, recursión
+    if (typeof value === "object" && value !== null) {
+      obj[key] = transformBValues(value);
+    }
+    // Si es string, buscamos la "B"
+    else if (typeof value === "string") {
+      // Normalizamos un poco para evitar caracteres ocultos
+      let cleanValue = value.replace(
+        /\u202C|\u202A|\u202B|\u202D|\u202E|\u200B|\u200C|\u200D|\uFEFF/g,
+        ""
+      );
+      if (cleanValue.includes("B")) {
+        // Extraemos la parte numérica (incluyendo signo negativo o decimal)
+        const numericPart = cleanValue.replace(/[^\d.-]/g, "");
+
+        // Intentamos parsear
+        const numberParsed = parseFloat(numericPart);
+        if (!isNaN(numberParsed)) {
+          // Multiplicamos por 1000
+          const multiplied = numberParsed * 1000;
+          // Construimos el nuevo string con " B"
+          obj[key] = multiplied + " B";
+        }
+      }
+    }
+  }
+  return obj;
+}
 /**
  * Aplica estilo de cabecera (fondo negro, texto blanco) a la fila `rowIndex`
  * en la hoja `ws`, para `numCols` columnas.
@@ -701,23 +738,27 @@ function calculateFiveYearGrowthRates(financialData) {
 
   const growthRates = {
     revenue: calculateCAGR(
-      cleanNumber(financialData.incomeStatement["Total revenue"]["2018"]),
-      cleanNumber(financialData.incomeStatement["Total revenue"]["2023"]),
+      cleanNumber(
+        financialData.incomeStatement?.["Total revenue"]?.["2018"] ?? 0
+      ),
+      cleanNumber(
+        financialData.incomeStatement?.["Total revenue"]?.["2023"] ?? 0
+      ),
       5
     ),
     netIncome: calculateCAGR(
-      cleanNumber(financialData.incomeStatement["Net income"]["2018"]),
-      cleanNumber(financialData.incomeStatement["Net income"]["2023"]),
+      cleanNumber(financialData.incomeStatement?.["Net income"]?.["2018"] ?? 0),
+      cleanNumber(financialData.incomeStatement?.["Net income"]?.["2023"] ?? 0),
       5
     ),
     ebitda: calculateCAGR(
-      cleanNumber(financialData.incomeStatement["EBITDA"]["2018"]),
-      cleanNumber(financialData.incomeStatement["EBITDA"]["2023"]),
+      cleanNumber(financialData.incomeStatement?.["EBITDA"]?.["2018"] ?? 0),
+      cleanNumber(financialData.incomeStatement?.["EBITDA"]?.["2023"] ?? 0),
       5
     ),
     freeCashFlow: calculateCAGR(
-      cleanNumber(financialData.cashFlow["Free cash flow"]["2018"]),
-      cleanNumber(financialData.cashFlow["Free cash flow"]["2023"]),
+      cleanNumber(financialData.cashFlow?.["Free cash flow"]?.["2018"] ?? 0),
+      cleanNumber(financialData.cashFlow?.["Free cash flow"]?.["2023"] ?? 0),
       5
     ),
   };
@@ -935,6 +976,7 @@ function calculatePercentageDifference(intrinsicValue, stockPrice) {
           incomeStatement: {},
           balanceSheet: {},
           cashFlow: {},
+          stock: {},
         };
 
         const overviewLink = document.getElementById("overview");
@@ -948,12 +990,18 @@ function calculatePercentageDifference(intrinsicValue, stockPrice) {
             "span.js-symbol-currency.currency-JWoJqCpY"
           );
 
+          const stockNameElement = document.querySelector("span.item-JLr4OyLc");
+
           if (stockPriceElement) {
             financialData.metrics.stockPrice =
               stockPriceElement.textContent.trim();
           }
           if (currencyElement) {
             financialData.metrics.currency = currencyElement.textContent.trim();
+          }
+
+          if (stockNameElement) {
+            financialData.stock = stockNameElement.textContent.trim();
           }
 
           const items = document.querySelectorAll("div.item-D38HaCsG");
@@ -1094,11 +1142,14 @@ function calculatePercentageDifference(intrinsicValue, stockPrice) {
         calculateFiveYearGrowthRates(financialData);
 
         intrensicValues = calcAllIntrinsicValues(financialData);
-        removeRowsAndColumns();
+        // FOR STYLING ONLY OLD WAY
+        // removeRowsAndColumns();
 
-        updateDOMWithInvestors(intrensicValues);
-        updateInvestorButtons(financialData);
+        // updateDOMWithInvestors(intrensicValues);
+        // updateInvestorButtons(financialData);
 
+        financialData = transformBValues(financialData);
+        console.log("FINANCIAL DATA", financialData);
         try {
           // Enviar mensaje al background script
           const response = await chrome.runtime.sendMessage({
