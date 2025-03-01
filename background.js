@@ -23,7 +23,7 @@ async function createSheet(financialData) {
     console.log("Default sheet ID:", defaultSheetId);
 
     // Create a sheet for each financial segment
-    const segments = ["metrics", "incomeStatement", "balanceSheet", "cashFlow"];
+    const segments = ["incomeStatement", "balanceSheet", "cashFlow"];
     const sheetIds = {};
 
     // Rename the first sheet to "Overview"
@@ -359,21 +359,137 @@ async function populateSegmentSheet(
   // Update values
   await updateValues(token, spreadsheetId, range, sheetData);
 
-  // Apply formatting
-  await applyFormatting(token, spreadsheetId, sheetId, {
-    headerRange: {
-      startRow: 0,
-      endRow: 1,
-      startCol: 0,
-      endCol: years.length + 1,
-    },
-    subheaderRange: {
-      startRow: 1,
-      endRow: 2,
-      startCol: 0,
-      endCol: years.length + 1,
-    },
-  });
+  async function applyFormatting(token, spreadsheetId, sheetId, ranges) {
+    const requests = [];
+
+    // Format header row with bold text and background color - manteniendo el estilo original
+    if (ranges.headerRange) {
+      requests.push({
+        repeatCell: {
+          range: {
+            sheetId: sheetId,
+            startRowIndex: ranges.headerRange.startRow,
+            endRowIndex: ranges.headerRange.endRow,
+            startColumnIndex: ranges.headerRange.startCol,
+            endColumnIndex: ranges.headerRange.endCol,
+          },
+          cell: {
+            userEnteredFormat: {
+              backgroundColor: {
+                red: 0.2,
+                green: 0.2,
+                blue: 0.6,
+                alpha: 1.0,
+              },
+              textFormat: {
+                foregroundColor: {
+                  red: 1.0,
+                  green: 1.0,
+                  blue: 1.0,
+                },
+                bold: true,
+                fontSize: 12,
+              },
+            },
+          },
+          fields: "userEnteredFormat(backgroundColor,textFormat)",
+        },
+      });
+    }
+
+    // Format subheaders if specified
+    if (ranges.subheaderRange) {
+      requests.push({
+        repeatCell: {
+          range: {
+            sheetId: sheetId,
+            startRowIndex: ranges.subheaderRange.startRow,
+            endRowIndex: ranges.subheaderRange.endRow,
+            startColumnIndex: ranges.subheaderRange.startCol,
+            endColumnIndex: ranges.subheaderRange.endCol,
+          },
+          cell: {
+            userEnteredFormat: {
+              backgroundColor: {
+                red: 0.8,
+                green: 0.8,
+                blue: 0.8,
+                alpha: 1.0,
+              },
+              textFormat: {
+                bold: true,
+                italic: true,
+              },
+            },
+          },
+          fields: "userEnteredFormat(backgroundColor,textFormat)",
+        },
+      });
+    }
+
+    // Hacer la columna B (índice 1) más ancha que las otras columnas
+    requests.push({
+      updateDimensionProperties: {
+        range: {
+          sheetId: sheetId,
+          dimension: "COLUMNS",
+          startIndex: 1, // Columna B (índice 0 es columna A)
+          endIndex: 2, // Solo columna B
+        },
+        properties: {
+          pixelSize: 250, // Ancho en píxeles (ajusta según necesites)
+        },
+        fields: "pixelSize",
+      },
+    });
+
+    // Auto-resize otras columnas
+    requests.push({
+      autoResizeDimensions: {
+        dimensions: {
+          sheetId: sheetId,
+          dimension: "COLUMNS",
+          startIndex: 0,
+          endIndex: 1, // Columna A
+        },
+      },
+    });
+
+    // Auto-resize columnas después de B
+    requests.push({
+      autoResizeDimensions: {
+        dimensions: {
+          sheetId: sheetId,
+          dimension: "COLUMNS",
+          startIndex: 2, // Desde columna C en adelante
+          endIndex: 15,
+        },
+      },
+    });
+
+    // Apply the formatting
+    if (requests.length > 0) {
+      const response = await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            requests: requests,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Failed to apply formatting: ${response.statusText}`);
+      }
+
+      return await response.json();
+    }
+  }
 
   // Apply number formatting
   const numberFormatRequests = [];
